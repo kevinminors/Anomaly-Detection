@@ -4,6 +4,8 @@ import datetime as dt
 import math
 import os
 
+# this is a change 
+
 # todo collapse time into night, morning rush hour, day time, afternoon rush hour.
 # todo make links symmetric
 
