@@ -7,6 +7,7 @@ import os
 # todo collapse time into night, morning rush hour, day time, afternoon rush hour.
 # todo make links symmetric
 # todo check code for duplicates
+# todo add gitignore for extra files
 
 raw_data = pd.DataFrame()
 
@@ -48,30 +49,67 @@ for f in files:
 # another change
 # raw_data = raw_data.iloc[:100, :]
 
+time_categories = pd.DataFrame(data=[[dt.time.min, dt.time(8)],
+                                     [dt.time(8), dt.time(10)],
+                                     [dt.time(10), dt.time(16)],
+                                     [dt.time(16), dt.time(18)],
+                                     [dt.time(18), dt.time.max]],
+                               index=['Morning', 'MorningRush', 'Day', 'AfternoonRush', 'Night'],
+                               columns=['StartTime', 'EndTime'])
+
 
 def convert_str_to_datetime(data):
     return data.map(lambda x: dt.datetime.strptime(x, '%Y-%m-%d %H:%M:%S'))
 
 
+def get_time_category(data):
+    for category in time_categories.index:
+        if time_categories.loc[category, 'StartTime'] < data.time <= time_categories.loc[category, 'EndTime']:
+            return category
+
+
 raw_data.iloc[:, 0] = convert_str_to_datetime(raw_data.iloc[:, 0])
 raw_data.iloc[:, 1] = convert_str_to_datetime(raw_data.iloc[:, 1])
 
-raw_data['JourneyTime'] = raw_data.iloc[:, 1] - raw_data.iloc[:, 0]
-raw_data['StartHour'] = raw_data.iloc[:, 0].map(lambda x: x.hour)
+raw_data['JourneyTime'] = raw_data.loc[:, 'DO_Datetime'] - raw_data.loc[:, 'PU_Datetime']
+raw_data['StartTime'] = raw_data.loc[:, 'PU_Datetime'].map(lambda x: x.time)
+raw_data['Link'] = [{x, y} for x, y in zip(raw_data['PU_Location'], raw_data['DO_Location'])]
+raw_data['TimeCategory'] = raw_data.loc[:, 'PU_Datetime'].apply(get_time_category)
+
+# todo add time category to each entry
+# or even a column for each time category (do this in non-hardcode way)
+# then use timecat to compare in groupby function
+
+print(raw_data)
+
+#
+# def which_time_category(time):
+
+
+def time_in_category(time, category):
+    return time_categories.loc[category, 'StartTime'] < time < time_categories.loc[category, 'EndTime']
 
 
 def calculate_datetime_average(data):
-    average_time_by_hour = pd.Series(index=range(24))
-    for hour in range(24):
-        if [journey_time.seconds for journey_time in data[data['StartHour'] == hour]['JourneyTime']]:
-            average_time_by_hour[hour] = (np.mean([journey_time.seconds for journey_time
-                                                  in data[data['StartHour'] == hour]['JourneyTime']]))
+    # average_time_by_hour = pd.Series(index=range(24))
+    # for hour in range(24):
+    #     if [journey_time.seconds for journey_time in data[data['StartHour'] == hour]['JourneyTime']]:
+    #         average_time_by_hour[hour] = (np.mean([journey_time.seconds for journey_time
+    #                                               in data[data['StartHour'] == hour]['JourneyTime']]))
+    #     else:
+    #         average_time_by_hour[hour] = 0
+    # return average_time_by_hour
+
+    average_time_by_category = pd.Series(index=time_categories.index)
+    for category in time_categories.index:
+        if [journey_time.seconds for journey_time in data[data['TimeCategory'] == category]['JourneyTime']]:
+            average_time_by_category[category] = (np.mean([journey_time.seconds for journey_time
+                                                  in data[data['TimeCategory'] == category]['JourneyTime']]))
         else:
-            average_time_by_hour[hour] = 0
-    return average_time_by_hour
+            average_time_by_category[category] = 0
 
 
-average_time = (raw_data.groupby(['PU_Location', 'DO_Location']).apply(calculate_datetime_average))
-print(average_time.index)
+average_time = (raw_data.groupby('Link').apply(calculate_datetime_average))
+print(average_time)
 
 # a change
