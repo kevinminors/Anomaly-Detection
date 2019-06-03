@@ -1,11 +1,11 @@
-import numpy as np
+# import numpy as np
 import pandas as pd
 import datetime as dt
-import math
+# import math
 import os
 
-# todo check code for duplicates
-# todo add gitignore for extra files
+# todo implement congestion factor method
+# todo implement percentile factor method
 
 
 time_categories = pd.DataFrame(data=[[dt.time.min, dt.time(8)],
@@ -17,44 +17,59 @@ time_categories = pd.DataFrame(data=[[dt.time.min, dt.time(8)],
                                columns=['StartTime', 'EndTime'])
 
 
-def find_raw_data():
-    path = 'M:/GitHub/Anomaly-Detection/Small/yellow_tripdata_2018-01.csv'
+def find_individual_raw_data():
+    path = 'M:/GitHub/Anomaly-Detection/Individual/yellow_tripdata_2018-01.csv'
     return pd.read_csv(path)
 
-    # Uncomment when using more than one file
-    #
-    # files = []
-    # for r, d, f in os.walk(path):
-    #     for file in f:
-    #         if '.csv' in file:
-    #             files.append(os.path.join(r, file))
-    #
-    # for f in files:
-    # add appropriate columns from each file to concantenated full dataframe
-    # raw_data = pd.concat([raw_data, file], ignore_index=True)
 
-    # determine type of each file
-    #
-    # if 'fhv' in f:
-    #     file = (file.drop(columns=file.columns[4:]))
-    # elif 'yellow' in f:
-    #     file = (file.drop(columns=file.columns[0])
-    #                 .drop(columns=file.columns[3:7])
-    #                 .drop(columns=file.columns[9:]))
-    # else:
-    #     file = (file.drop(columns=file.columns[0])
-    #             .drop(columns=file.columns[3:5])
-    #             .drop(columns=file.columns[7:]))
+def find_multiple_raw_data():
+    print('Getting multiple raw data files...')
+    path = 'M:/GitHub/Anomaly-Detection/Multiple'
+
+    files = []
+    for r, d, f in os.walk(path):
+        for file in f:
+            if '.csv' in file:
+                files.append(os.path.join(r, file))
+
+    data = pd.DataFrame()
+
+    print('Cleaning data...')
+    for file in files:
+
+        file_data = pd.read_csv(file)
+
+        if 'fhv' in file:
+            data = pd.concat([data, clean_raw_data(file_data, 'fhv')], ignore_index=True)
+        elif 'yellow' in file:
+            data = pd.concat([data, clean_raw_data(file_data, 'yellow')], ignore_index=True)
+        elif 'green' in file:
+            data = pd.concat([data, clean_raw_data(file_data, 'green')], ignore_index=True)
+        else:
+            print('raw data error')
+
+    print('Data cleaned.')
+    return data
 
 
-def clean_raw_data(data):
-
-    data = (data.drop(columns=data.columns[0])
-            .drop(columns=data.columns[3:7])
-            .drop(columns=data.columns[9:]))
+def clean_raw_data(data, data_format):
+    print('Cleaning...')
+    if data_format == 'fhv':
+        data = (data.drop(columns=data.columns[4:]))
+    elif data_format == 'yellow':
+        data = (data.drop(columns=data.columns[0])
+                    .drop(columns=data.columns[3:7])
+                    .drop(columns=data.columns[9:]))
+    elif data_format == 'green':
+        data = (data.drop(columns=data.columns[0])
+                .drop(columns=data.columns[3:5])
+                .drop(columns=data.columns[7:]))
+    else:
+        print('type error')
 
     data.columns = ['PU_Datetime', 'DO_Datetime', 'PU_Location', 'DO_Location']
     data.dropna(inplace=True)
+    data.drop_duplicates(inplace=True)
     data['PU_Location'] = data['PU_Location'].astype(int)
     data['DO_Location'] = data['DO_Location'].astype(int)
 
@@ -79,52 +94,42 @@ def clean_raw_data(data):
     return data
 
 
-# def calculate_average_journey_time(data):
-
-# def calculate_average_journey_time_by_link(current_data):
-#     average_journey_time_by_category = pd.Series(index=time_categories.index)
-#     for category in time_categories.index:
-#         if ([journey_time for journey_time in
-#              current_data[current_data['TimeCategory'] == category]['JourneyTime']]):
-#             mean = (np.mean([journey_time for journey_time
-#                              in current_data[current_data['TimeCategory'] == category]['JourneyTime']]))
-#             average_journey_time_by_category[category] = mean
-#         else:
-#             average_journey_time_by_category[category] = 0
-#     # print()
-#     # print('current data')
-#     # print(current_data)
-#     # print()
-#     # print('average_journey_time')
-#     # print(average_journey_time_by_category)
-#     # print()
-#     return average_journey_time_by_category
-# #     return pd.Series(index=time_categories.index)
-
-    # return average_time_by_category
+def calculate_average_journey_time(data):
+    print('Calculating average journey time...')
+    average_time = data.groupby(['Link', 'TimeCategory']).mean().unstack('TimeCategory')
+    average_time.columns = time_categories.index
+    print('Average journey time calculated.')
+    return average_time
 
 
-raw_data = find_raw_data()
+def run_congestion_factor_method(c_data, h_data, congestion_factor):
+    print('Running congestion method...')
+    for index in range(c_data.shape[0]):
+        c_jt = c_data.iloc[index, 0]
+        c_link = c_data.iloc[index, 1]
+        c_cat = c_data.iloc[index, 2]
+
+        print('c jt', c_jt, 'c_link', c_link, 'c_cat', c_cat, end='\n')
+        print('h_jt', h_data.loc[c_link, c_cat])
+
+    # c_data['IsCongested'] = [c_data.iloc[index, 0] >=
+    #                          congestion_factor * h_data.loc[c_data.iloc[index, 1], c_data.iloc[index, 2]]
+    #                          for index in range(c_data.shape[0])]
+    print('Congestion method complete.')
+    return c_data
+
+
+# raw_data = find_individual_raw_data()
 # print(raw_data.head())
-clean_data = clean_raw_data(raw_data.iloc[:, :])
+# clean_data = clean_raw_data(raw_data.iloc[:100, :], 'yellow')
+
+clean_data = find_multiple_raw_data()
 # print(clean_data)
-# clean_data['Jou']
+historical_data = calculate_average_journey_time(clean_data)
+# print(historical_data)
+congested_data = run_congestion_factor_method(clean_data, historical_data, congestion_factor=1.8)
+print(congested_data.head())
 
-# convert journeytime to seconds
-
-
-# average_time_by_category = (clean_data.groupby(['Link']).apply(calculate_average_journey_time_by_link))
-# print(average_time_by_category)
-
-# average_journey_time = calculate_average_journey_time(clean_data)
-# print(average_journey_time)
-
-# link_index = clean_data.groupby(['Link']).count().index
-# df = pd.DataFrame(index=link_index, columns=time_categories.index)
-# print(df)
-df = clean_data.groupby(['Link', 'TimeCategory']).mean()
-print(df)
-# print(average_journey_time.head(), average_journey_time.shape, average_journey_time.index, sep='\n')
 
 
 
