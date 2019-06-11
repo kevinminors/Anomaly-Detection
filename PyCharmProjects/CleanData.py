@@ -1,20 +1,27 @@
-# import numpy as np
+import numpy as np
 import pandas as pd
 import datetime as dt
 # import math
 import os
 
+# look for entries with None as timecategory
+# check for journey time = 0
 # todo implement congestion factor method
 # todo implement percentile factor method
+# Use import cProfile
+#
+# import cProfile
+# pr = cProfile.Profile()
+# pr.enable()
+# your_function_call()
+# pr.disable()
+# # after your program ends
+# pr.print_stats(sort="calls")
 
+# to profile each method
 
-time_categories = pd.DataFrame(data=[[dt.time.min, dt.time(8)],
-                                     [dt.time(8), dt.time(10)],
-                                     [dt.time(10), dt.time(16)],
-                                     [dt.time(16), dt.time(18)],
-                                     [dt.time(18), dt.time.max]],
-                               index=['Morning', 'MorningRush', 'Day', 'AfternoonRush', 'Night'],
-                               columns=['StartTime', 'EndTime'])
+time_bins = [8*60*60, 10*60*60, 16*60*60, 18*60*60, 24*60*60]
+time_cats = np.array(['Morning', 'MorningRush', 'Day', 'AfternoonRush', 'Night'])
 
 
 def find_individual_raw_data():
@@ -24,7 +31,7 @@ def find_individual_raw_data():
 
 def find_multiple_raw_data():
     print('Getting multiple raw data files...')
-    path = 'M:/GitHub/Anomaly-Detection/Multiple'
+    path = 'C:/Users/medkmin/PycharmProjects/TransportData/Multiple'
 
     files = []
     for r, d, f in os.walk(path):
@@ -32,89 +39,85 @@ def find_multiple_raw_data():
             if '.csv' in file:
                 files.append(os.path.join(r, file))
 
+    column_names = ['PU_Datetime', 'DO_Datetime', 'PU_Location', 'DO_Location']
     data = pd.DataFrame()
 
-    print('Cleaning data...')
     for file in files:
 
-        file_data = pd.read_csv(file)
-
         if 'fhv' in file:
-            data = pd.concat([data, clean_raw_data(file_data, 'fhv')], ignore_index=True)
+            print('Reading data...')
+            file_data = pd.read_csv(file,
+                                    parse_dates=[0, 1],
+                                    infer_datetime_format=True,
+                                    usecols=[0, 1, 2, 3],
+                                    names=column_names,
+                                    converters={2: np.int64, 3: np.int64},
+                                    header=0)
+            print('Data read.')
+            data = pd.concat([data, clean_raw_data(file_data)], ignore_index=True)
+
         elif 'yellow' in file:
-            data = pd.concat([data, clean_raw_data(file_data, 'yellow')], ignore_index=True)
+            print('Reading data...')
+            file_data = pd.read_csv(file,
+                                    parse_dates=[0, 1],
+                                    infer_datetime_format=True,
+                                    usecols=[1, 2, 7, 8],
+                                    names=column_names,
+                                    converters={7: np.int64, 8: np.int64},
+                                    header=0)
+            print('Data read.')
+            data = pd.concat([data, clean_raw_data(file_data)], ignore_index=True)
+
         elif 'green' in file:
-            data = pd.concat([data, clean_raw_data(file_data, 'green')], ignore_index=True)
+            print('Reading data...')
+            file_data = pd.read_csv(file,
+                                    parse_dates=[0, 1],
+                                    infer_datetime_format=True,
+                                    usecols=[1, 2, 5, 6],
+                                    names=column_names,
+                                    converters={5: np.int64, 6: np.int64},
+                                    header=0)
+            print('Data read.')
+            data = pd.concat([data, clean_raw_data(file_data)], ignore_index=True)
+
         else:
             print('raw data error')
 
-    print('Data cleaned.')
     return data
 
 
-def clean_raw_data(data, data_format):
-    print('Cleaning...')
-    if data_format == 'fhv':
-        data = (data.drop(columns=data.columns[4:]))
-    elif data_format == 'yellow':
-        data = (data.drop(columns=data.columns[0])
-                    .drop(columns=data.columns[3:7])
-                    .drop(columns=data.columns[9:]))
-    elif data_format == 'green':
-        data = (data.drop(columns=data.columns[0])
-                .drop(columns=data.columns[3:5])
-                .drop(columns=data.columns[7:]))
-    else:
-        print('type error')
+def clean_raw_data(data):
+    print('Cleaning data...')
 
-    data.columns = ['PU_Datetime', 'DO_Datetime', 'PU_Location', 'DO_Location']
     data.dropna(inplace=True)
     data.drop_duplicates(inplace=True)
-    data['PU_Location'] = data['PU_Location'].astype(int)
-    data['DO_Location'] = data['DO_Location'].astype(int)
+    data['JourneyTime'] = [journey_time.seconds for journey_time in (data['DO_Datetime'] - data['PU_Datetime'])]
+    data['Link'] = [str({x, y}) for x, y in zip(data['PU_Location'], data['DO_Location'])]
 
-    def convert_str_to_datetime(current_data):
-        return current_data.map(lambda x: dt.datetime.strptime(x, '%Y-%m-%d %H:%M:%S'))
-
-    data.iloc[:, 0] = convert_str_to_datetime(data.iloc[:, 0])
-    data.iloc[:, 1] = convert_str_to_datetime(data.iloc[:, 1])
-
-    data['JourneyTime'] = [journey.seconds for journey in (data.loc[:, 'DO_Datetime'] - data.loc[:, 'PU_Datetime'])]
-    data['Link'] = [tuple({x, y}) for x, y in zip(data['PU_Location'], data['DO_Location'])]
-
-    def get_time_category(current_data):
-        for category in time_categories.index:
-            if time_categories.loc[category, 'StartTime'] < current_data.time() \
-                    <= time_categories.loc[category, 'EndTime']:
-                return category
-
-    data['TimeCategory'] = data.loc[:, 'PU_Datetime'].apply(get_time_category)
+    data['PU_Datetime'] = data['PU_Datetime'].apply(lambda x: (x - dt.datetime(x.year, x.month, x.day)).seconds)
+    bins = np.digitize(data['PU_Datetime'].values, bins=time_bins)
+    data['TimeCats'] = time_cats[bins]
     data = (data.drop(columns=data.columns[0:4]))
-
+    print('Data cleaned.')
     return data
 
 
 def calculate_average_journey_time(data):
     print('Calculating average journey time...')
-    average_time = data.groupby(['Link', 'TimeCategory']).mean().unstack('TimeCategory')
-    average_time.columns = time_categories.index
+    average_time = data.groupby(['Link', 'TimeCats']).mean().unstack('TimeCats')
+    average_time.columns = time_cats
     print('Average journey time calculated.')
     return average_time
 
 
 def run_congestion_factor_method(c_data, h_data, congestion_factor):
     print('Running congestion method...')
-    for index in range(c_data.shape[0]):
-        c_jt = c_data.iloc[index, 0]
-        c_link = c_data.iloc[index, 1]
-        c_cat = c_data.iloc[index, 2]
 
-        print('c jt', c_jt, 'c_link', c_link, 'c_cat', c_cat, end='\n')
-        print('h_jt', h_data.loc[c_link, c_cat])
-
-    # c_data['IsCongested'] = [c_data.iloc[index, 0] >=
-    #                          congestion_factor * h_data.loc[c_data.iloc[index, 1], c_data.iloc[index, 2]]
-    #                          for index in range(c_data.shape[0])]
+    c_data['IsCongested'] = [c_data.iloc[index, 0] >=
+                             congestion_factor * h_data.loc[c_data.iloc[index, 1], c_data.iloc[index, 2]]
+                             for index in range(c_data.shape[0])]
+    c_data['CongestionTime'] = [congestion_factor * h_data.loc[c_data.iloc[index, 1], c_data.iloc[index, 2]]
+                                for index in range(c_data.shape[0])]
     print('Congestion method complete.')
     return c_data
 
@@ -127,13 +130,7 @@ clean_data = find_multiple_raw_data()
 # print(clean_data)
 historical_data = calculate_average_journey_time(clean_data)
 # print(historical_data)
-congested_data = run_congestion_factor_method(clean_data, historical_data, congestion_factor=1.8)
-print(congested_data.head())
-
-
-
-
-
-
+congested_data = run_congestion_factor_method(clean_data, historical_data, congestion_factor=100)
+print(congested_data[congested_data['IsCongested']])
 
 
